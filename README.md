@@ -19,27 +19,36 @@ CREATE CONSTRAINT multisegment_id FOR (m:MultiSegment) REQUIRE j.id IS UNIQUE;
 CREATE CONSTRAINT station_point FOR (s:Station) REQUIRE s.point IS UNIQUE;
 CREATE CONSTRAINT junction_point FOR (j:Junction) REQUIRE j.point IS UNIQUE;
 
+// Clean up old graph (optional)
+CALL apoc.periodic.commit('
+    MATCH (n)
+    WITH n LIMIT $limit
+    DETACH DELETE n
+    RETURN COUNT(*)
+', {limit:500});
+
 ```
 
 
-### Loading Multi-segments
+### About the source data
 A multi-segment is a piece of train track that consists of multiple (smaller) segments. Keep in mind, multi-segments are not the same as routes between stations, we establish these later.
 
 
 For our purpose, we want to split up the multi-segment, and store the individual track segments in the graph.
 
 The graph will then have the shape:
-```
-(:Junction)-[:TRACK]->(:Junction)
-```
 
-First, load the multi-segements.
+**(:Junction)-[:TRACK]->(:Junction)**
+
+### Loading Multi-segments
+
+First, load the multi-segments.
 ```
 LOAD CSV WITH HEADERS from "file:///europe-rail-road.csv" AS row
     FIELDTERMINATOR ';'
 CREATE (s:MultiSegment)
 SET s = row
-SET s.id = split(row['inspireId'],":")[1]
+SET s.id = split(row['inspireId'],":")[1];
 ```
 
 Extract junctions from multi-segments (in batches).
@@ -54,7 +63,7 @@ CALL apoc.periodic.commit('
     SET j.point = point({latitude: coords[1], longitude: coords[0]})
     CREATE (s)-[:HAS_JUNCTION{index: apoc.coll.indexOf(coords_list, coords)}]->(j)
     RETURN COUNT(*)
-', {limit:500})
+', {limit:500});
 ```
 
 Re-assign junction ids based on their multisegment id + index.
@@ -68,7 +77,7 @@ CALL apoc.periodic.commit('
     SET j.point = point({latitude: coords[1], longitude: coords[0]})
     CREATE (s)-[:HAS_JUNCTION{index: apoc.coll.indexOf(coords_list, coords)}]->(j)
     RETURN COUNT(*)
-', {limit:500})
+', {limit:500});
 ```
 
 
@@ -85,7 +94,7 @@ CALL apoc.periodic.commit('
     WITH m, apoc.coll.pairsMin(junctions) as pairs 
     UNWIND pairs as pair
     WITH m, pair[0] as j1, pair[1] as j2
-    CREATE (j1)-[:TRACK]->(j2)
+    CREATE (j1)-[:TRACK{distance: point.distance(j1.point, j2.point)}]->(j2)
     SET m.processed = true
     RETURN COUNT(*)
 ', {limit:500});
