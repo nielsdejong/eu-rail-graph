@@ -44,11 +44,13 @@ The graph will then have the shape:
 
 First, load the multi-segments.
 ```
-LOAD CSV WITH HEADERS from "file:///europe-rail-road.csv" AS row
-    FIELDTERMINATOR ';'
-CREATE (s:MultiSegment)
-SET s = row
-SET s.id = split(row['inspireId'],":")[1];
+:auto LOAD CSV WITH HEADERS from "file:///europe-rail-road.csv" AS row FIELDTERMINATOR ';'
+CALL {
+    WITH row
+    CREATE (s:MultiSegment)
+    SET s = row
+    SET s.id = split(row['inspireId'],":")[1]
+} IN TRANSACTIONS OF 1000 ROWS
 ```
 
 Extract junctions from multi-segments (in batches).
@@ -58,6 +60,8 @@ CALL apoc.periodic.commit('
     WHERE NOT EXISTS ((s)-[:HAS_JUNCTION]->())
     WITH s LIMIT $limit
     WITH s, apoc.convert.fromJsonMap(s.`Geo Shape`).coordinates as coords_list
+    SET s.tracks = size(coords_list)
+    WITH s, coords_list
     UNWIND coords_list as coords
     MERGE (j:Junction{id: coords[0]+","+coords[1]})
     SET j.point = point({latitude: coords[1], longitude: coords[0]})
@@ -66,19 +70,6 @@ CALL apoc.periodic.commit('
 ', {limit:500});
 ```
 
-Re-assign junction ids based on their multisegment id + index.
-```
-CALL apoc.periodic.commit('
-    MATCH (s:MultiSegment)
-    WITH s LIMIT $limit
-    WITH s, apoc.convert.fromJsonMap(s.`Geo Shape`).coordinates as coords_list
-    UNWIND coords_list as coords
-    MERGE (j:Junction{id: coords[0]+","+coords[1]})
-    SET j.point = point({latitude: coords[1], longitude: coords[0]})
-    CREATE (s)-[:HAS_JUNCTION{index: apoc.coll.indexOf(coords_list, coords)}]->(j)
-    RETURN COUNT(*)
-', {limit:500});
-```
 
 
 Create tracks between adjacent junctions:
@@ -100,6 +91,26 @@ CALL apoc.periodic.commit('
 ', {limit:500});
 ```
 
+Create station to station routes
+```
+CALL apoc.periodic.commit('
+    MATCH (p:Station) 
+    WHERE NOT EXISTS ((p)-[:ROUTE]->())
+    WITH p LIMIT $limit
+    WITH p
+    CALL apoc.path.subgraphNodes(p, {
+        relationshipFilter: "TRACK",
+        labelFilter: "/Station",
+        minLevel: 1,
+        maxLevel: 500000
+    })
+    YIELD node
+    WITH p, node as p2
+    CREATE (p)-[:ROUTE]->(p2)
+    RETURN COUNT(*)
+', {limit:50});
+```
+
 
 ### Loading Stations
 Load the stations dataset, and overlay it onto the junctions.
@@ -113,25 +124,34 @@ WITH row, point({latitude: toFloat(coords[0]), longitude: toFloat(coords[1])}) a
 MATCH (j:Junction)
 WHERE j.point = point
 SET j:Station
-SET j = row
-SET j.id = split(row['inspireId'],":")[1];
-```
 
-Post query cleanup...
-```
-MATCH (n:Station)
-WITH n, split(n.`Geo Point`,",") as coords
-WITH n, point({latitude: toFloat(coords[0]), longitude: toFloat(coords[1])})  as point
-SET n.point = point;
-```
+SET n.since = row.beginLifes
+SET n.id = row.RStationID
+SET n.uuid = row.inspireId
 
-```
-MATCH (s:Station)
-SET s.name = s.NAMA1;
-```
+// TUC codes
+// 0 Unknown
+// 25 Cargo/Freight
+// 26 Passenger
+// 45 General
+// 998 Military
+SET n.usage_category = row.TUC
+SET n.country_code_3 = row.NLN1
+SET n.country_code_2 = row.ICC
+// TFC is the type of station:
+// 0 Unknown
+// 15 Railway Station
+// 31 Joint Railway Station
+// 32 Halt
+// 33 Marshalling Yard
+// 34 Intermodal Rail Transport
+// Terminal
+SET n.type = row.TFC
 
-```
-MATCH (s:Station)
-WHERE s.NAMA2 <> "N_A"
-SET s.name = s.NAMA1 + "/" + s.NAMA2;
+WITH n, row, split(row.`Geo Point`,",") as coords
+SET n.point = point({latitude: toFloat(coords[0]), longitude: toFloat(coords[1])}) 
+
+SET n.name = row.NAMA1
+SET n.name_alt = row.NAMA1 + "/" + row.NAMA2
+SET n.all_names = row.NAMA1 + "/" + row.NAMN2  + "/" +  row.NAMA1  + "/" + row.NAMA2;
 ```
