@@ -134,7 +134,6 @@ CALL {
     // 45 General
     SET n.usage_category = row.TUC
 
-    SET 
 
     // Countries
     SET n.country_code_3 = row.NLN1
@@ -143,7 +142,10 @@ CALL {
     // Names
     SET n.name = row.NAMA1
     SET n.name_alt = row.NAMA1 + "/" + row.NAMA2
-    SET n.all_names = row.NAMA1 + "/" + row.NAMN2  + "/" +  row.NAMA1  + "/" + row.NAMA2;
+    SET n.all_names = row.NAMA1 + " / " + row.NAMA2  + " / " +  row.NAMN1  + " / " + row.NAMN2
+
+    // Shape
+    SET n.shape = row.`Geo Shape`;
 
 
 } IN TRANSACTIONS OF 1000 ROWS
@@ -231,8 +233,8 @@ WITH n, row, split(row.`Geo Point`,",") as coords
 SET n.point = point({latitude: toFloat(coords[0]), longitude: toFloat(coords[1])}) 
 
 SET n.name = row.NAMA1
-SET n.name_alt = row.NAMA1 + "/" + row.NAMA2
-SET n.all_names = row.NAMA1 + "/" + row.NAMN2  + "/" +  row.NAMA1  + "/" + row.NAMA2;
+SET n.name_alt = row.NAMA1 + " / " + row.NAMA2
+SET n.all_names = row.NAMA1 + " / " + row.NAMA2  + " / " +  row.NAMN1  + " / " + row.NAMN2;
 ```
 
 Create station to station routes
