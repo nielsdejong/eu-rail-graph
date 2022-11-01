@@ -40,6 +40,9 @@ The graph will then have the shape:
 
 **(:Junction)-[:TRACK]->(:Junction)**
 
+Meanings of properties in the source data are documented here:
+https://eurogeographics.org/wp-content/uploads/2018/04/EGM_Specification_v10.pdf
+
 ### Loading Multi-segments
 
 First, load the multi-segments.
@@ -48,8 +51,101 @@ First, load the multi-segments.
 CALL {
     WITH row
     CREATE (s:MultiSegment)
-    SET s = row
+   
     SET s.id = split(row['inspireId'],":")[1]
+
+    // row.RRA (Power Source)
+    // 0 Unknown
+    // 1 Electrified track
+    // 3 Overhead electrified
+    // 4 Non-electrified
+    SET s.power_source = row.RRA
+
+    // row.RSD = Railroad speed class
+    // 0 Unknown
+    // 1 Conventional Railway Line (~150 kmh)
+    // 2 Upgraded high-speed railway line (order of 200km/h)
+    // 3 Dedicated high-speed railway line (≥250km/h)
+    // 997 Unpopulated
+    SET r.train_speed_kmh = row.RSD
+
+    // row.RSU =  Seasonal availablility
+    // 0 Unknown
+    // 1 All year
+    // 2 Seasonal
+    // 997 Unpopulated
+    ET r.availability = row.RSU
+
+    // row.EXS = status
+    // 0 Unknown
+    // 5 Under construction
+    // 6 Abandoned
+    // 28 Operational
+    SET s.status = row.EXS
+
+    // row.TEN = part of TransEuropean network
+    // 0 Unknown
+    // 1 part of TEN-T network
+    // 2 not part of TEN-T network
+    SET n.transeuropean_network = row.TEN
+
+    // row.FCO = feature configuration (how many rails?)
+    // 0 Unknown
+    // 2 Multiple
+    //  3 Single
+    SET s.rail_configuration = row.FCO
+
+    // row.F_CODE 
+    // AN010 = Railway
+    // AN500 = Railway Network Link
+    set f.type = row.F_CODE
+
+    SET n.since = row.beginLifes
+    SET n.uuid = row.inspireId
+
+    // row.RGC = gauge category
+    // 0 Unknown
+    // 1 Broad
+    // 2 Narrow
+    // 3 Normal (Country Specific)
+    // 998 Not applicable (for monorails)
+    SET n.gauge_category = row.RGC
+    // row.GAW = Gauge Width (cm)
+    SET n.gauge_width_cm = row.GAW
+
+    // row.LLE = Location Level
+    //-9 Underground (unknown level)
+    //-2 Underground (second level)
+    //-1 Underground (first level)
+    //0 Unknown
+    //1 On ground surface
+    //2 Suspended or elevated (first level)
+    //3 Suspended or elevated (second level)
+    //9 Suspended or elevated (unknown level)
+    SET n.location = row.LLE
+ 
+    // row.RCO = Railroad code
+    SET n.railroad_code = row.RCO
+
+    // row.TUC = usage category
+    // 0 Unknown
+    // 25 Cargo/Freight
+    // 26 Passenger
+    // 45 General
+    SET n.usage_category = row.TUC
+
+    SET 
+
+    // Countries
+    SET n.country_code_3 = row.NLN1
+    SET n.country_code_2 = row.ICC
+
+    // Names
+    SET n.name = row.NAMA1
+    SET n.name_alt = row.NAMA1 + "/" + row.NAMA2
+    SET n.all_names = row.NAMA1 + "/" + row.NAMN2  + "/" +  row.NAMA1  + "/" + row.NAMA2;
+
+
 } IN TRANSACTIONS OF 1000 ROWS
 ```
 
@@ -91,26 +187,6 @@ CALL apoc.periodic.commit('
 ', {limit:500});
 ```
 
-Create station to station routes
-```
-CALL apoc.periodic.commit('
-    MATCH (p:Station) 
-    WHERE NOT EXISTS ((p)-[:ROUTE]->())
-    WITH p LIMIT $limit
-    WITH p
-    CALL apoc.path.subgraphNodes(p, {
-        relationshipFilter: "TRACK",
-        labelFilter: "/Station",
-        minLevel: 1,
-        maxLevel: 500000
-    })
-    YIELD node
-    WITH p, node as p2
-    CREATE (p)-[:ROUTE]->(p2)
-    RETURN COUNT(*)
-', {limit:50});
-```
-
 
 ### Loading Stations
 Load the stations dataset, and overlay it onto the junctions.
@@ -136,8 +212,11 @@ SET n.uuid = row.inspireId
 // 45 General
 // 998 Military
 SET n.usage_category = row.TUC
+
+// Countries
 SET n.country_code_3 = row.NLN1
 SET n.country_code_2 = row.ICC
+
 // TFC is the type of station:
 // 0 Unknown
 // 15 Railway Station
@@ -154,4 +233,24 @@ SET n.point = point({latitude: toFloat(coords[0]), longitude: toFloat(coords[1])
 SET n.name = row.NAMA1
 SET n.name_alt = row.NAMA1 + "/" + row.NAMA2
 SET n.all_names = row.NAMA1 + "/" + row.NAMN2  + "/" +  row.NAMA1  + "/" + row.NAMA2;
+```
+
+Create station to station routes
+```
+CALL apoc.periodic.commit('
+    MATCH (p:Station) 
+    WHERE NOT EXISTS ((p)-[:ROUTE]->())
+    WITH p LIMIT $limit
+    WITH p
+    CALL apoc.path.subgraphNodes(p, {
+        relationshipFilter: "TRACK",
+        labelFilter: "/Station",
+        minLevel: 1,
+        maxLevel: 500000
+    })
+    YIELD node
+    WITH p, node as p2
+    CREATE (p)-[:ROUTE]->(p2)
+    RETURN COUNT(*)
+', {limit:50});
 ```
