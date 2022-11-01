@@ -1,24 +1,3 @@
-#  European Rail Network Graph
-This repository contains data, queries and visualizations for mapping the European Rail Network inside Neo4j (As prepared for NODES 2022).
-
-## 1. Data Loading
-As source data, this graph uses two public datasets provided by opendatasoft.com.
-
-| Dataset               | URL                                                                                 |
-|-----------------------|-------------------------------------------------------------------------------------|
-| EU Railway Stations   | https://public.opendatasoft.com/explore/dataset/europe-railway-station/information/ |
-| EU Rail Road Segments | https://public.opendatasoft.com/explore/dataset/europe-rail-road/information/       |
-
-To get started, create a Neo4j database, install `apoc`, and move the contents of the `data` directory in this repository into your `import` folder in Neo4j.
-
-### Create Constraints
-```
-CREATE CONSTRAINT station_id FOR (s:Station) REQUIRE s.id IS UNIQUE;
-CREATE CONSTRAINT junction_id FOR (j:Junction) REQUIRE j.id IS UNIQUE;
-CREATE CONSTRAINT tracksegment_id FOR (m:Track) REQUIRE j.id IS UNIQUE;
-CREATE CONSTRAINT station_point FOR (s:Station) REQUIRE s.point IS UNIQUE;
-CREATE CONSTRAINT junction_point FOR (j:Junction) REQUIRE j.point IS UNIQUE;
-
 // Clean up old graph (optional)
 CALL apoc.periodic.commit('
     MATCH (n)
@@ -27,26 +6,6 @@ CALL apoc.periodic.commit('
     RETURN COUNT(*)
 ', {limit:1000});
 
-```
-
-
-### About the source data
-A multi-segment is a piece of train track that consists of multiple (smaller) segments. Keep in mind, multi-segments are not the same as routes between stations, we establish these later.
-
-
-For our purpose, we want to split up the multi-segment, and store the individual track segments in the graph.
-
-The graph will then have the shape:
-
-**(:Junction)-[:TRACK]->(:Junction)**
-
-Meanings of properties in the source data are documented here:
-https://eurogeographics.org/wp-content/uploads/2018/04/EGM_Specification_v10.pdf
-
-### Loading Multi-segments
-
-First, load the multi-segments.
-```
 :auto LOAD CSV WITH HEADERS from "file:///europe-rail-road.csv" AS row FIELDTERMINATOR ';'
 CALL {
     WITH row
@@ -210,10 +169,8 @@ CALL {
     SET s.shape = row.`Geo Shape`
 
 } IN TRANSACTIONS OF 1000 ROWS;
-```
 
-Extract junctions from multi-track-segments (in batches).
-```
+
 CALL apoc.periodic.commit('
     MATCH (s:Track)
     WHERE NOT EXISTS ((s)-[:HAS_JUNCTION]->())
@@ -236,14 +193,11 @@ CALL apoc.periodic.commit('
     SET t = s
     RETURN COUNT(*)
 ', {limit:500});
-```
 
 
-
-For each track, create the track segments between adjacent junctions:
-```
 CALL apoc.periodic.commit('
     MATCH (m:Track)
+    WHERE m.processed IS NULL
     WITH m LIMIT $limit
     MATCH (m:Track)-[h:HAS_JUNCTION]->(j:Junction) 
     WITH m, j, h.index as index 
@@ -256,19 +210,19 @@ CALL apoc.periodic.commit('
     SET t = m
     SET t.distance = point.distance(j1.point, j2.point)
     SET t.id =  m.id + "-" + apoc.coll.indexOf(pairs, pair)
-    SET t.parent_id =  m.id 
+    SET t.parent_id =  m.id
+    SET m.processed = true
+    RETURN COUNT(*)
+', {limit:500});
+
+CALL apoc.periodic.commit('
+    MATCH (m:Track)
+    WITH m LIMIT $limit
     DETACH DELETE m
     RETURN COUNT(*)
 ', {limit:500});
-```
 
 
-### Loading Stations
-Load the stations dataset, and overlay it onto the junctions.
-
-> Note - we are matching on 8127 out of 8128 stations here, with the exception of Nagyatad station in Hungary. For now, we can ignore this one.
-
-```
 LOAD CSV WITH HEADERS from "file:///europe-railway-station.csv" AS row FIELDTERMINATOR ';'
 WITH row, split(row.`Geo Point`,",") as coords
 WITH row, point({latitude: toFloat(coords[0]), longitude: toFloat(coords[1])}) as point
@@ -321,30 +275,18 @@ SET n.point = point({latitude: toFloat(coords[0]), longitude: toFloat(coords[1])
 SET n.name = row.NAMA1
 SET n.name_alt = row.NAMA1 + " / " + row.NAMA2
 SET n.all_names = row.NAMA1 + " / " + row.NAMA2  + " / " +  row.NAMN1  + " / " + row.NAMN2;
-```
 
-### Set up intersections and routes between them.
 
-Establish intersections. We define intersections as junctions where:
-- More than two tracks meet.
-- Only one track is present (e.g. the end of the track).
-- A junction where a station is present.
 
-Intersections can then be used to create a routing graph
-```
+
 MATCH (j:Junction)-[t:TRACK_SEGMENT]-()
 WITH j, COUNT(t) as count
 WHERE count > 2 OR count = 1
 SET j:Intersection;
-```
 
-```
 MATCH (j:Station)
 SET j:Intersection;
-```
 
-Create routes between intersections using a subgraph detection algorithm.
-```
 CALL apoc.periodic.commit('
     MATCH (p:Intersection) 
     WHERE NOT EXISTS ((p)-[:ROUTE]->())
@@ -361,16 +303,12 @@ CALL apoc.periodic.commit('
     CREATE (p)-[:ROUTE]->(p2)
     RETURN COUNT(*)
 ', {limit:50});
-```
 
-Calculate distances between intersection points.
-```
 CALL apoc.periodic.commit("
     MATCH (p:Intersection)-[r:ROUTE]->(p2:Intersection)
     WHERE p.distance IS NULL
-    WITH r, p, p2 LIMIT 500
+    WITH r, p, p2 LIMIT $limit
     CALL apoc.algo.dijkstra(p, p2, 'TRACK_SEGMENT', 'distance') YIELD path, weight
     SET r.distance = weight
     RETURN COUNT(*)
 ", {limit:500});
-```
