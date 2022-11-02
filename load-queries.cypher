@@ -1,3 +1,10 @@
+// Create constraints
+CREATE CONSTRAINT station_id IF NOT EXISTS FOR (s:Station) REQUIRE s.id IS UNIQUE;
+CREATE CONSTRAINT track_id IF NOT EXISTS FOR (m:Track) REQUIRE m.id IS UNIQUE;
+CREATE TEXT INDEX track_rel_id_name IF NOT EXISTS FOR ()-[r:TRACK]-() ON (r.id);
+CREATE TEXT INDEX track_segment_rel_id_name IF NOT EXISTS FOR ()-[r:TRACK_SEGMENT]-() ON (r.id);
+CREATE CONSTRAINT point IF NOT EXISTS FOR (s:Point) REQUIRE s.point IS UNIQUE;
+
 // Clean up old graph (optional)
 CALL apoc.periodic.commit('
     MATCH (n)
@@ -6,7 +13,7 @@ CALL apoc.periodic.commit('
     RETURN COUNT(*)
 ', {limit:1000});
 
-:auto LOAD CSV WITH HEADERS from "file:///europe-rail-road.csv" AS row FIELDTERMINATOR ';'
+:auto LOAD CSV WITH HEADERS from "https://raw.githubusercontent.com/nielsdejong/eu-rail-graph/main/data/europe-rail-road.csv" AS row FIELDTERMINATOR ';'
 CALL {
     WITH row
     CREATE (s:Track)
@@ -162,7 +169,7 @@ CALL {
 
     // Names
     SET s.name = row.NAMA1
-    SET s.name_alt = row.NAMA1 + "/" + row.NAMA2
+    SET s.name_alt = row.NAMA1 + " / " + row.NAMA2
     SET s.all_names = row.NAMA1 + " / " + row.NAMA2  + " / " +  row.NAMN1  + " / " + row.NAMN2
 
     // Shape
@@ -173,24 +180,24 @@ CALL {
 
 CALL apoc.periodic.commit('
     MATCH (s:Track)
-    WHERE NOT EXISTS ((s)-[:HAS_JUNCTION]->())
+    WHERE NOT EXISTS ((s)-[:HAS_POINT]->())
     WITH s LIMIT $limit
     WITH s, apoc.convert.fromJsonMap(s.shape).coordinates as coords_list
-    SET s.segments = size(coords_list)
-
+    SET s.segments = size(coords_list) - 1
+ 
     WITH s, coords_list
     UNWIND coords_list as coords
-    MERGE (j:Junction{id: coords[0]+","+coords[1]})
-    SET j.point = point({latitude: coords[1], longitude: coords[0]})
-    CREATE (s)-[:HAS_JUNCTION{index: apoc.coll.indexOf(coords_list, coords)}]->(j)
-    WITH s, collect(j) as junctions
+    MERGE (j:Point{point: point({latitude: coords[1], longitude: coords[0]})})
+    CREATE (s)-[:HAS_POINT{index: apoc.coll.indexOf(coords_list, coords)}]->(j)
+    WITH s, collect(j) as points
     
-    WITH s, junctions, apoc.coll.pairsMin([j in junctions | j.point]) as point_pairs
+    WITH s, points, apoc.coll.pairsMin([j in points | j.point]) as point_pairs
     SET s.distance = apoc.coll.sum([p in point_pairs | point.distance(p[0], p[1])]) 
     REMOVE s.shape
-    WITH s, junctions[0] as start, junctions[-1] as end
+    WITH s, points[0] as start, points[-1] as end
     CREATE (start)-[t:TRACK]->(end)
     SET t = s
+    SET t.children = [s in range(1,t.segments) | t.id + "_segment_" + s]
     RETURN COUNT(*)
 ', {limit:500});
 
@@ -199,18 +206,19 @@ CALL apoc.periodic.commit('
     MATCH (m:Track)
     WHERE m.processed IS NULL
     WITH m LIMIT $limit
-    MATCH (m:Track)-[h:HAS_JUNCTION]->(j:Junction) 
+    MATCH (m:Track)-[h:HAS_POINT]->(j:Point) 
     WITH m, j, h.index as index 
     ORDER BY m.id, index
-    WITH m, collect(j) as junctions
-    WITH m, apoc.coll.pairsMin(junctions) as pairs 
+    WITH m, collect(j) as points
+    WITH m, apoc.coll.pairsMin(points) as pairs 
     UNWIND pairs as pair
     WITH m, pairs, pair, pair[0] as j1, pair[1] as j2
     CREATE (j1)-[t:TRACK_SEGMENT]->(j2)
     SET t = m
     SET t.distance = point.distance(j1.point, j2.point)
-    SET t.id =  m.id + "-" + apoc.coll.indexOf(pairs, pair)
-    SET t.parent_id =  m.id
+    SET t.id =  m.id + "_segment_" + apoc.coll.indexOf(pairs, pair)
+    SET t.index = apoc.coll.indexOf(pairs, pair)
+    SET t.parent_track_id =  m.id
     SET m.processed = true
     RETURN COUNT(*)
 ', {limit:500});
@@ -223,10 +231,10 @@ CALL apoc.periodic.commit('
 ', {limit:500});
 
 
-LOAD CSV WITH HEADERS from "file:///europe-railway-station.csv" AS row FIELDTERMINATOR ';'
+LOAD CSV WITH HEADERS from "https://raw.githubusercontent.com/nielsdejong/eu-rail-graph/main/data/europe-railway-station.csv" AS row FIELDTERMINATOR ';'
 WITH row, split(row.`Geo Point`,",") as coords
 WITH row, point({latitude: toFloat(coords[0]), longitude: toFloat(coords[1])}) as point
-MATCH (n:Junction)
+MATCH (n:Point)
 WHERE n.point = point
 SET n:Station
 SET n.since = row.beginLifes
@@ -279,16 +287,16 @@ SET n.all_names = row.NAMA1 + " / " + row.NAMA2  + " / " +  row.NAMN1  + " / " +
 
 
 
-MATCH (j:Junction)-[t:TRACK_SEGMENT]-()
+MATCH (j:Point)-[t:TRACK_SEGMENT]-()
 WITH j, COUNT(t) as count
 WHERE count > 2 OR count = 1
-SET j:Intersection;
+SET j:Junction;
 
 MATCH (j:Station)
-SET j:Intersection;
+SET j:Junction;
 
 CALL apoc.periodic.commit('
-    MATCH (p:Intersection) 
+    MATCH (p:Junction) 
     WHERE NOT EXISTS ((p)-[:ROUTE]->())
     WITH p LIMIT $limit
     WITH p
@@ -305,8 +313,8 @@ CALL apoc.periodic.commit('
 ', {limit:50});
 
 CALL apoc.periodic.commit("
-    MATCH (p:Intersection)-[r:ROUTE]->(p2:Intersection)
-    WHERE p.distance IS NULL
+    MATCH (p:Junction)-[r:ROUTE]->(p2:Junction)
+    WHERE r.distance IS NULL
     WITH r, p, p2 LIMIT $limit
     CALL apoc.algo.dijkstra(p, p2, 'TRACK_SEGMENT', 'distance') YIELD path, weight
     SET r.distance = weight

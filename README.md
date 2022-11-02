@@ -13,11 +13,9 @@ To get started, create a Neo4j database, install `apoc`, and move the contents o
 
 ### Create Constraints
 ```
-CREATE CONSTRAINT station_id FOR (s:Station) REQUIRE s.id IS UNIQUE;
-CREATE CONSTRAINT junction_id FOR (j:Junction) REQUIRE j.id IS UNIQUE;
-CREATE CONSTRAINT tracksegment_id FOR (m:Track) REQUIRE j.id IS UNIQUE;
-CREATE CONSTRAINT station_point FOR (s:Station) REQUIRE s.point IS UNIQUE;
-CREATE CONSTRAINT junction_point FOR (j:Junction) REQUIRE j.point IS UNIQUE;
+CREATE CONSTRAINT IF NOT EXISTS station_id FOR (s:Station) REQUIRE s.id IS UNIQUE;
+CREATE CONSTRAINT IF NOT EXISTS track_id FOR (m:Track) REQUIRE j.id IS UNIQUE;
+CREATE CONSTRAINT IF NOT EXISTS point FOR (s:Point) REQUIRE s.point IS UNIQUE;
 
 // Clean up old graph (optional)
 CALL apoc.periodic.commit('
@@ -29,6 +27,8 @@ CALL apoc.periodic.commit('
 
 ```
 
+> TODO UPDATE ALL QUERIES BASED on load-queries.cypher!!
+
 
 ### About the source data
 A multi-segment is a piece of train track that consists of multiple (smaller) segments. Keep in mind, multi-segments are not the same as routes between stations, we establish these later.
@@ -38,7 +38,10 @@ For our purpose, we want to split up the multi-segment, and store the individual
 
 The graph will then have the shape:
 
-**(:Junction)-[:TRACK]->(:Junction)**
+**(:Point)-[:TRACK]->(:Point)**
+
+
+**(:Point)-[:TRACK_SEGMENT]->(:Point)-[:TRACK_SEGMENT]->(:Point)**
 
 Meanings of properties in the source data are documented here:
 https://eurogeographics.org/wp-content/uploads/2018/04/EGM_Specification_v10.pdf
@@ -216,16 +219,15 @@ Extract junctions from multi-track-segments (in batches).
 ```
 CALL apoc.periodic.commit('
     MATCH (s:Track)
-    WHERE NOT EXISTS ((s)-[:HAS_JUNCTION]->())
+    WHERE NOT EXISTS ((s)-[:HAS_POINT]->())
     WITH s LIMIT $limit
     WITH s, apoc.convert.fromJsonMap(s.shape).coordinates as coords_list
     SET s.segments = size(coords_list)
 
     WITH s, coords_list
     UNWIND coords_list as coords
-    MERGE (j:Junction{id: coords[0]+","+coords[1]})
-    SET j.point = point({latitude: coords[1], longitude: coords[0]})
-    CREATE (s)-[:HAS_JUNCTION{index: apoc.coll.indexOf(coords_list, coords)}]->(j)
+    MERGE (j:Point{point({latitude: coords[1], longitude: coords[0]})})
+    CREATE (s)-[:HAS_POINT{index: apoc.coll.indexOf(coords_list, coords)}]->(j)
     WITH s, collect(j) as junctions
     
     WITH s, junctions, apoc.coll.pairsMin([j in junctions | j.point]) as point_pairs
@@ -245,7 +247,7 @@ For each track, create the track segments between adjacent junctions:
 CALL apoc.periodic.commit('
     MATCH (m:Track)
     WITH m LIMIT $limit
-    MATCH (m:Track)-[h:HAS_JUNCTION]->(j:Junction) 
+    MATCH (m:Track)-[h:HAS_POINT]->(j:Point) 
     WITH m, j, h.index as index 
     ORDER BY m.id, index
     WITH m, collect(j) as junctions
@@ -272,7 +274,7 @@ Load the stations dataset, and overlay it onto the junctions.
 LOAD CSV WITH HEADERS from "file:///europe-railway-station.csv" AS row FIELDTERMINATOR ';'
 WITH row, split(row.`Geo Point`,",") as coords
 WITH row, point({latitude: toFloat(coords[0]), longitude: toFloat(coords[1])}) as point
-MATCH (n:Junction)
+MATCH (n:Point)
 WHERE n.point = point
 SET n:Station
 SET n.since = row.beginLifes
@@ -332,7 +334,7 @@ Establish intersections. We define intersections as junctions where:
 
 Intersections can then be used to create a routing graph
 ```
-MATCH (j:Junction)-[t:TRACK_SEGMENT]-()
+MATCH (j:Point)-[t:TRACK_SEGMENT]-()
 WITH j, COUNT(t) as count
 WHERE count > 2 OR count = 1
 SET j:Intersection;
@@ -367,7 +369,7 @@ Calculate distances between intersection points.
 ```
 CALL apoc.periodic.commit("
     MATCH (p:Intersection)-[r:ROUTE]->(p2:Intersection)
-    WHERE p.distance IS NULL
+    WHERE r.distance IS NULL
     WITH r, p, p2 LIMIT 500
     CALL apoc.algo.dijkstra(p, p2, 'TRACK_SEGMENT', 'distance') YIELD path, weight
     SET r.distance = weight
