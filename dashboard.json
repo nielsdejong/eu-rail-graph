@@ -24,8 +24,8 @@
             "y": 0,
             "type": "map",
             "selection": {
-              "Point": "(no label)",
               "Station": "(no label)",
+              "Point": "(no label)",
               "Junction": "(no label)"
             },
             "settings": {
@@ -33,12 +33,12 @@
             }
           },
           {
-            "title": "Total Stations Visited",
+            "title": "Total stations visited",
             "query": "MATCH (n:Station), (m:Station)\nWHERE n.name = $neodash_station_name_1 and m.name = $neodash_station_name_2\nWITH n,m\nCALL apoc.algo.dijkstra(n, m, 'ROUTE', 'travel_time_seconds') YIELD path, weight\nWITH weight, path\nUNWIND nodes(path) as node\nWITH node\nWHERE \"Station\" in labels(node)\nRETURN COUNT(*) + \" stations\"\n\n\n\n",
             "width": 3,
             "height": 1,
-            "x": 9,
-            "y": 2,
+            "x": 0,
+            "y": 3,
             "type": "value",
             "selection": {},
             "settings": {
@@ -47,7 +47,7 @@
           },
           {
             "title": "Total time",
-            "query": "MATCH (n:Station), (m:Station)\nWHERE n.name = $neodash_station_name_1 and m.name = $neodash_station_name_2\nWITH n,m\nCALL apoc.algo.dijkstra(n, m, 'ROUTE', 'travel_time_seconds') YIELD path, weight\nWITH weight, path\nRETURN  (weight / 3600.0)  + \" hours\" as time\n\n\n\n\n\n\n",
+            "query": "MATCH (n:Station), (m:Station)\nWHERE n.name = $neodash_station_name_1 and m.name = $neodash_station_name_2\nWITH n,m\nCALL apoc.algo.dijkstra(n, m, 'ROUTE', 'travel_time_seconds') YIELD path, weight\nWITH weight, path\nRETURN  apoc.math.round((weight / 3600.0),2)  + \" hours\" as time\n\n\n\n\n\n\n",
             "width": 3,
             "height": 1,
             "x": 9,
@@ -96,7 +96,7 @@
             "width": 3,
             "height": 1,
             "x": 9,
-            "y": 3,
+            "y": 2,
             "type": "value",
             "selection": {},
             "settings": {
@@ -105,30 +105,25 @@
           },
           {
             "title": "Total time",
-            "query": "\n\n\n",
+            "query": "MATCH (n:Station), (m:Station)\nWHERE n.name = $neodash_station_name_1 and m.name = $neodash_station_name_2\nWITH n,m\nCALL apoc.algo.dijkstra(n, m, 'ROUTE', 'travel_time_seconds') YIELD path, weight\nWITH weight, path\nRETURN toInteger(apoc.coll.sum([r in relationships(path) | r.distance]) / 1000.0) + \" km\" as km\n\n\n\n\n\n\n\n\n\n",
             "width": 3,
             "height": 1,
             "x": 9,
             "y": 1,
-            "type": "table",
+            "type": "value",
             "selection": {},
             "settings": {}
           },
           {
-            "title": "Graph",
-            "query": "MATCH (n:Station), (m:Station)\nWHERE n.name = $neodash_station_name_1 and m.name = $neodash_station_name_2\nWITH n,m\nCALL apoc.algo.dijkstra(n, m, 'ROUTE', 'travel_time_seconds') YIELD path, weight\nRETURN *\n\n\n\n\n",
+            "title": "Average speed",
+            "query": "MATCH (n:Station), (m:Station)\nWHERE n.name = $neodash_station_name_1 and m.name = $neodash_station_name_2\nWITH n,m\nCALL apoc.algo.dijkstra(n, m, 'ROUTE', 'travel_time_seconds') YIELD path, weight\nWITH weight, path\nRETURN toInteger(apoc.coll.sum([r in relationships(path) | r.distance]) / 1000.0 / (weight / 3600.0)) + \" km/h\" as km\n\n\n\n\n\n\n\n\n\n\n\n\n",
             "width": 3,
-            "height": 2,
-            "x": 0,
-            "y": 4,
-            "type": "graph",
-            "selection": {
-              "Station": "name",
-              "Junction": "(label)"
-            },
-            "settings": {
-              "layout": "force-directed"
-            }
+            "height": 1,
+            "x": 9,
+            "y": 3,
+            "type": "value",
+            "selection": {},
+            "settings": {}
           }
         ]
       }
