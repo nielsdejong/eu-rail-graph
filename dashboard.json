@@ -1,0 +1,137 @@
+{
+    "title": "",
+    "version": "2.1",
+    "settings": {
+      "pagenumber": 0,
+      "editable": true,
+      "fullscreenEnabled": false,
+      "parameters": {
+        "neodash_station_name": "",
+        "neodash_station_name_2": "Port Glasgow Station",
+        "neodash_station_name_1": "Berlin Friedrichstrasse"
+      }
+    },
+    "pages": [
+      {
+        "title": "Main Page",
+        "reports": [
+          {
+            "title": "Your route",
+            "query": "MATCH (n:Station), (m:Station)\nWHERE n.name = $neodash_station_name_1 and m.name = $neodash_station_name_2\nWITH n,m\nCALL apoc.algo.dijkstra(n, m, 'ROUTE', 'travel_time_seconds') YIELD path, weight\nRETURN *\n\n",
+            "width": 6,
+            "height": 4,
+            "x": 3,
+            "y": 0,
+            "type": "map",
+            "selection": {
+              "Point": "(no label)",
+              "Station": "(no label)",
+              "Junction": "(no label)"
+            },
+            "settings": {
+              "defaultNodeSize": "small"
+            }
+          },
+          {
+            "title": "Total Stations Visited",
+            "query": "MATCH (n:Station), (m:Station)\nWHERE n.name = $neodash_station_name_1 and m.name = $neodash_station_name_2\nWITH n,m\nCALL apoc.algo.dijkstra(n, m, 'ROUTE', 'travel_time_seconds') YIELD path, weight\nWITH weight, path\nUNWIND nodes(path) as node\nWITH node\nWHERE \"Station\" in labels(node)\nRETURN COUNT(*) + \" stations\"\n\n\n\n",
+            "width": 3,
+            "height": 1,
+            "x": 9,
+            "y": 2,
+            "type": "value",
+            "selection": {},
+            "settings": {
+              "fontSize": 48
+            }
+          },
+          {
+            "title": "Total time",
+            "query": "MATCH (n:Station), (m:Station)\nWHERE n.name = $neodash_station_name_1 and m.name = $neodash_station_name_2\nWITH n,m\nCALL apoc.algo.dijkstra(n, m, 'ROUTE', 'travel_time_seconds') YIELD path, weight\nWITH weight, path\nRETURN  (weight / 3600.0)  + \" hours\" as time\n\n\n\n\n\n\n",
+            "width": 3,
+            "height": 1,
+            "x": 9,
+            "y": 0,
+            "type": "value",
+            "selection": {},
+            "settings": {}
+          },
+          {
+            "title": "Choose a starting station",
+            "query": "MATCH (n:`Station`) \nWHERE toLower(toString(n.`name`)) CONTAINS toLower($input) \nRETURN DISTINCT n.`name` as value ORDER BY size(toString(value)) ASC LIMIT 5",
+            "width": 3,
+            "height": 1,
+            "x": 0,
+            "y": 0,
+            "type": "select",
+            "selection": {},
+            "settings": {
+              "type": "Node Property",
+              "entityType": "Station",
+              "propertyType": "name",
+              "parameterName": "neodash_station_name_1",
+              "id": "1"
+            }
+          },
+          {
+            "title": "Choose an end station",
+            "query": "MATCH (n:`Station`) \nWHERE toLower(toString(n.`name`)) CONTAINS toLower($input) \nRETURN DISTINCT n.`name` as value ORDER BY size(toString(value)) ASC LIMIT 5",
+            "width": 3,
+            "height": 1,
+            "x": 0,
+            "y": 1,
+            "type": "select",
+            "selection": {},
+            "settings": {
+              "type": "Node Property",
+              "entityType": "Station",
+              "propertyType": "name",
+              "parameterName": "neodash_station_name_2",
+              "id": "2"
+            }
+          },
+          {
+            "title": "Countries visited",
+            "query": "MATCH (n:Station), (m:Station)\nWHERE n.name = $neodash_station_name_1 and m.name = $neodash_station_name_2\nWITH n,m\nCALL apoc.algo.dijkstra(n, m, 'ROUTE', 'travel_time_seconds') YIELD path, weight\nWITH weight, path\nUNWIND nodes(path) as node\nWITH node\nWHERE \"Station\" in labels(node)\nWITH DISTINCT node.country_code_2 as country_code\nRETURN apoc.convert.toString(collect(country_code)) as list\n\n\n\n\n\n",
+            "width": 3,
+            "height": 1,
+            "x": 9,
+            "y": 3,
+            "type": "value",
+            "selection": {},
+            "settings": {
+              "fontSize": 30
+            }
+          },
+          {
+            "title": "Total time",
+            "query": "\n\n\n",
+            "width": 3,
+            "height": 1,
+            "x": 9,
+            "y": 1,
+            "type": "table",
+            "selection": {},
+            "settings": {}
+          },
+          {
+            "title": "Graph",
+            "query": "MATCH (n:Station), (m:Station)\nWHERE n.name = $neodash_station_name_1 and m.name = $neodash_station_name_2\nWITH n,m\nCALL apoc.algo.dijkstra(n, m, 'ROUTE', 'travel_time_seconds') YIELD path, weight\nRETURN *\n\n\n\n\n",
+            "width": 3,
+            "height": 2,
+            "x": 0,
+            "y": 4,
+            "type": "graph",
+            "selection": {
+              "Station": "name",
+              "Junction": "(label)"
+            },
+            "settings": {
+              "layout": "force-directed"
+            }
+          }
+        ]
+      }
+    ],
+    "parameters": {}
+  }

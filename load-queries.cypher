@@ -193,11 +193,16 @@ CALL apoc.periodic.commit('
     
     WITH s, points, apoc.coll.pairsMin([j in points | j.point]) as point_pairs
     SET s.distance = apoc.coll.sum([p in point_pairs | point.distance(p[0], p[1])]) 
+
+    WITH s, points
+    WITH s, points, s.train_speed_kmh * (1000.0/3600.0) as speed_ms
+    SET s.travel_time_seconds = s.distance / speed_ms 
+
     REMOVE s.shape
     WITH s, points[0] as start, points[-1] as end
     CREATE (start)-[t:TRACK]->(end)
     SET t = s
-    SET t.children = [s in range(1,t.segments) | t.id + "_segment_" + s]
+    // SET t.children = [s in range(1,t.segments) | t.id + "_segment_" + s]
     RETURN COUNT(*)
 ', {limit:500});
 
@@ -216,6 +221,8 @@ CALL apoc.periodic.commit('
     CREATE (j1)-[t:TRACK_SEGMENT]->(j2)
     SET t = m
     SET t.distance = point.distance(j1.point, j2.point)
+    SET t.travel_time_seconds = t.distance / (t.train_speed_kmh * (1000.0/3600.0))
+
     SET t.id =  m.id + "_segment_" + apoc.coll.indexOf(pairs, pair)
     SET t.index = apoc.coll.indexOf(pairs, pair)
     SET t.parent_track_id =  m.id
@@ -223,12 +230,80 @@ CALL apoc.periodic.commit('
     RETURN COUNT(*)
 ', {limit:500});
 
+// clean up placeholders
 CALL apoc.periodic.commit('
     MATCH (m:Track)
     WITH m LIMIT $limit
     DETACH DELETE m
     RETURN COUNT(*)
 ', {limit:500});
+
+
+// We add an extra track for cool routing options, the train between Dover and Calais:
+MATCH (p:Point), (p2:Point)
+WHERE p.point.x = 1.786886999999808 AND p.point.y = 50.920566499999836
+AND p2.point.x =1.2820610000000001 AND  p2.point.y=51.10915049999982 
+WITH p, p2
+SET p:Junction
+SET p2:Junction
+CREATE (p)-[t:TRACK_SEGMENT]->(p2)
+SET t = {
+    train_speed_kmh: 150,
+    distance: 50500,
+    travel_time_seconds: 1211.9990304,
+    parent_track_id: "c4b9c960-5a90-11ed-9b6a-0242ac120",
+    index: 0,
+    availability: "All year",
+    type: "Railway",
+    all_names: "Eurotunnel",
+    name_alt: "Eurotunnel",
+    country_code_2: "FR",
+    railroad_code: "N_P",
+    uuid: "_EG.EGM.RailrdL:c4b9c960-5a90-11ed-9b6a-0242ac120",
+    country_code_3: "FRA",
+    gauge_width_cm: 144.0,
+    segments: 1,
+    rail_configuration: "Unknown",
+    usage_category: "Passenger",
+    transeuropean_network: true,
+    gauge_category: "Normal",
+    name: "Eurotunnel",
+    location: "Underground (unknown level)",
+    id: "c4b9c960-5a90-11ed-9b6a-0242ac120_segment_0",
+    power_source: "Electrified track",
+    since: "2015-10-26T01:00:00+01:00",
+    status: "Operational"
+}
+CREATE (p)-[t2:TRACK]->(p2)
+SET t2 = {
+    train_speed_kmh: 150,
+    travel_time_seconds: 1211.9990304,
+    distance: 50500,
+    index: 0,
+    availability: "All year",
+    type: "Railway",
+    all_names: "Eurotunnel",
+    name_alt: "Eurotunnel",
+    country_code_2: "FR",
+    railroad_code: "N_P",
+    uuid: "_EG.EGM.RailrdL:c4b9c960-5a90-11ed-9b6a-0242ac120",
+    country_code_3: "FRA",
+    gauge_width_cm: 144.0,
+    segments: 1,
+    rail_configuration: "Unknown",
+    usage_category: "Passenger",
+    transeuropean_network: true,
+    gauge_category: "Normal",
+    name: "Eurotunnel",
+    location: "Underground (unknown level)",
+    id: "c4b9c960-5a90-11ed-9b6a-0242ac120",
+    power_source: "Electrified track",
+    since: "2015-10-26T01:00:00+01:00",
+    status: "Operational",
+    children: [
+      "c4b9c960-5a90-11ed-9b6a-0242ac120_segment_0"
+    ]
+};
 
 
 LOAD CSV WITH HEADERS from "https://raw.githubusercontent.com/nielsdejong/eu-rail-graph/main/data/europe-railway-station.csv" AS row FIELDTERMINATOR ';'
@@ -286,37 +361,38 @@ SET n.all_names = row.NAMA1 + " / " + row.NAMA2  + " / " +  row.NAMN1  + " / " +
 
 
 
-
 MATCH (j:Point)-[t:TRACK_SEGMENT]-()
 WITH j, COUNT(t) as count
 WHERE count > 2 OR count = 1
 SET j:Junction;
 
 MATCH (j:Station)
-SET j:Junction;
+SET j:Station:Junction:Point;
 
 CALL apoc.periodic.commit('
     MATCH (p:Junction) 
-    WHERE NOT EXISTS ((p)-[:ROUTE]->())
+    WHERE p.routed IS NULL
     WITH p LIMIT $limit
     WITH p
     CALL apoc.path.subgraphNodes(p, {
-        relationshipFilter: "TRACK_SEGMENT",
-        labelFilter: "/Intersection",
+        relationshipFilter: "TRACK",
+        labelFilter: "/Junction",
         minLevel: 1,
         maxLevel: 500000
     })
     YIELD node
     WITH p, node as p2
     CREATE (p)-[:ROUTE]->(p2)
+    SET p.routed = true
     RETURN COUNT(*)
 ', {limit:50});
 
 CALL apoc.periodic.commit("
     MATCH (p:Junction)-[r:ROUTE]->(p2:Junction)
-    WHERE r.distance IS NULL
+    WHERE r.travel_time_seconds IS NULL
     WITH r, p, p2 LIMIT $limit
-    CALL apoc.algo.dijkstra(p, p2, 'TRACK_SEGMENT', 'distance') YIELD path, weight
-    SET r.distance = weight
+    CALL apoc.algo.dijkstra(p, p2, 'TRACK', 'travel_time_seconds') YIELD path, weight
+    SET r.travel_time_seconds = apoc.coll.sum([r in relationships(path) | r.travel_time_seconds])
+    SET r.distance = apoc.coll.sum([r in relationships(path) | r.distance])
     RETURN COUNT(*)
 ", {limit:500});
