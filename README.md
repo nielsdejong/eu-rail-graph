@@ -3,17 +3,17 @@ This repository contains data, queries and visualizations for visualizing the Eu
 
 This demo was prepared for NODES 2022 - slides are available here: https://docs.google.com/presentation/d/17Dp64vB-FIGzHt3IWnge4eMRi2CtloNVS5dT7S4DUJQ/edit?usp=sharing.
 
+This repository consists of:
+
+| Item               | Description                                                                                 |
+|-----------------------|-------------------------------------------------------------------------------------|
+| A Data Model Sketch (`model/model.json`)   | This can be loaded into arrows.app. |
+| Load Queries (`cypher/load-queries.cypher`) | These can be copy pasted into Neo4j Browser. Make sure multi-statement Cypher is enabled in the editor so you can copy-paste the entire file.  |
+| Analytical Queries (`cypher/analytical-queries.cypher`)| Queries for doing pathfinding between stations in the graph.  |
+| NeoDash Dashboard (`dashboard/dashboard.json`)  (`cypher/analytical-queries.cypher`)| A dashboard file you can load into [NeoDash](https://neodash.graphapp.io).  |
 
 
-It consists of:
-- A data model sketch (`model/model.json`) that can be loaded into arrows.app.
-- Queries for loading the data (`cypher/load-queries.cypher`), that can be copy pasted into Neo4j Browser.
-  - Make sure multi-statement Cypher is enabled in the editor so you can copy-paste the entire file.
-- Queries for doing pathfinding between stations in the graph (`cypher/analytical-queries.cypher`).
-- A NeoDash dashboard (`dashboard/dashboard.json`) that you can load into [NeoDash](https://neodash.graphapp.io).
-
-The queries here have been built for and tested with Neo4j 5.1.
-A no-installation-required demo of the dashboard is also available at https://neodash-gallery.graphapp.io.
+> The queries here have been built for and tested with Neo4j 5.1. A no-installation-required demo of the dashboard is also available at https://neodash-gallery.graphapp.io.
 
 
 ## Source Data
