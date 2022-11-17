@@ -3,6 +3,9 @@ This repository contains data, queries and visualizations for visualizing the Eu
 
 This demo was prepared for NODES 2022 - slides are available here: https://docs.google.com/presentation/d/17Dp64vB-FIGzHt3IWnge4eMRi2CtloNVS5dT7S4DUJQ/edit?usp=sharing.
 
+![railplanner](railplanner.png)
+
+## Contents
 This repository consists of:
 
 | Item               | Description                                                                                 |
