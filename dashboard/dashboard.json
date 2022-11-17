@@ -7,7 +7,7 @@
     "fullscreenEnabled": false,
     "parameters": {
       "neodash_station_name": "",
-      "neodash_station_name_2": "'s Hertogenbosch",
+      "neodash_station_name_2": "Breda",
       "neodash_station_name_1": "Rotterdam Centraal"
     },
     "disableRowLimiting": false
