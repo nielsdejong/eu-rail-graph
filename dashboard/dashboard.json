@@ -1,0 +1,234 @@
+{
+  "title": "Interactive Route Planner",
+  "version": "2.2",
+  "settings": {
+    "pagenumber": 0,
+    "editable": true,
+    "fullscreenEnabled": false,
+    "parameters": {
+      "neodash_station_name": "",
+      "neodash_station_name_2": "'s Hertogenbosch",
+      "neodash_station_name_1": "Rotterdam Centraal"
+    },
+    "disableRowLimiting": false
+  },
+  "pages": [
+    {
+      "title": "Main Page",
+      "reports": [
+        {
+          "title": "Your route",
+          "query": "MATCH (n:Station), (m:Station)\nWHERE n.name = $neodash_station_name_1 and m.name = $neodash_station_name_2\nWITH n,m\nCALL apoc.algo.dijkstra(n, m, 'ROUTE', 'travel_time_seconds') YIELD path, weight\nRETURN *\n\n",
+          "width": 5,
+          "height": 4,
+          "x": 3,
+          "y": 0,
+          "type": "map",
+          "selection": {
+            "Station": "(no label)",
+            "Junction": "(no label)"
+          },
+          "settings": {
+            "defaultNodeSize": "small"
+          }
+        },
+        {
+          "title": "Stations visited",
+          "query": "MATCH (n:Station), (m:Station)\nWHERE n.name = $neodash_station_name_1 and m.name = $neodash_station_name_2\nWITH n,m\nCALL apoc.algo.dijkstra(n, m, 'ROUTE', 'travel_time_seconds') YIELD path, weight\nWITH weight, path\nUNWIND nodes(path) as node\nWITH node\nWHERE \"Station\" in labels(node)\nRETURN COUNT(*) + \" stations\"\n\n\n\n",
+          "width": 3,
+          "height": 1,
+          "x": 0,
+          "y": 2,
+          "type": "value",
+          "selection": {},
+          "settings": {
+            "fontSize": 48
+          }
+        },
+        {
+          "title": "Travel time",
+          "query": "MATCH (n:Station), (m:Station)\nWHERE n.name = $neodash_station_name_1 and m.name = $neodash_station_name_2\nWITH n,m\nCALL apoc.algo.dijkstra(n, m, 'ROUTE', 'travel_time_seconds') YIELD path, weight\nWITH weight, path\nRETURN  \n\n\napoc.date.format(toInteger(weight), 's', \" HH:mm:ss\")\n\n",
+          "width": 2,
+          "height": 1,
+          "x": 8,
+          "y": 0,
+          "type": "value",
+          "selection": {},
+          "settings": {
+            "fontSize": 50
+          }
+        },
+        {
+          "title": "Choose a starting station",
+          "query": "MATCH (n:`Station`) \nWHERE toLower(toString(n.`name`)) CONTAINS toLower($input) \nRETURN DISTINCT n.`name` as value ORDER BY size(toString(value)) ASC LIMIT 5",
+          "width": 3,
+          "height": 1,
+          "x": 0,
+          "y": 0,
+          "type": "select",
+          "selection": {},
+          "settings": {
+            "type": "Node Property",
+            "entityType": "Station",
+            "propertyType": "name",
+            "parameterName": "neodash_station_name_1",
+            "id": "1"
+          }
+        },
+        {
+          "title": "Choose an end station",
+          "query": "MATCH (n:`Station`) \nWHERE toLower(toString(n.`name`)) CONTAINS toLower($input) \nRETURN DISTINCT n.`name` as value ORDER BY size(toString(value)) ASC LIMIT 5",
+          "width": 3,
+          "height": 1,
+          "x": 0,
+          "y": 1,
+          "type": "select",
+          "selection": {},
+          "settings": {
+            "type": "Node Property",
+            "entityType": "Station",
+            "propertyType": "name",
+            "parameterName": "neodash_station_name_2",
+            "id": "2"
+          }
+        },
+        {
+          "title": "Countries traveled through",
+          "query": "MATCH (n:Station), (m:Station)\nWHERE n.name = $neodash_station_name_1 and m.name = $neodash_station_name_2\nWITH n,m\nCALL apoc.algo.dijkstra(n, m, 'ROUTE', 'travel_time_seconds') YIELD path, weight\nWITH weight, path\nUNWIND nodes(path) as node\nWITH node\nWHERE \"Station\" in labels(node)\nRETURN DISTINCT node.country_code_2 as country, COUNT(*) as percentage\n\n\n",
+          "width": 4,
+          "height": 2,
+          "x": 8,
+          "y": 2,
+          "type": "pie",
+          "selection": {
+            "index": "country",
+            "value": "percentage",
+            "key": "(none)"
+          },
+          "settings": {
+            "fontSize": 30
+          }
+        },
+        {
+          "title": "Distance",
+          "query": "MATCH (n:Station), (m:Station)\nWHERE n.name = $neodash_station_name_1 and m.name = $neodash_station_name_2\nWITH n,m\nCALL apoc.algo.dijkstra(n, m, 'ROUTE', 'travel_time_seconds') YIELD path, weight\nWITH weight, path\nRETURN toInteger(apoc.coll.sum([r in relationships(path) | r.distance]) / 1000.0) + \" km\" as km\n\n\n\n\n\n\n\n\n\n",
+          "width": 2,
+          "height": 1,
+          "x": 10,
+          "y": 0,
+          "type": "value",
+          "selection": {},
+          "settings": {
+            "fontSize": 44
+          }
+        },
+        {
+          "title": "Average speed",
+          "query": "MATCH (n:Station), (m:Station)\nWHERE n.name = $neodash_station_name_1 and m.name = $neodash_station_name_2\nWITH n,m\nCALL apoc.algo.dijkstra(n, m, 'ROUTE', 'travel_time_seconds') YIELD path, weight\nWITH weight, path\nRETURN toInteger(apoc.coll.sum([r in relationships(path) | r.distance]) / 1000.0 / (weight / 3600.0)) + \" km/h\" as km\n\n\n\n\n\n\n\n\n\n\n\n\n",
+          "width": 4,
+          "height": 1,
+          "x": 8,
+          "y": 1,
+          "type": "value",
+          "selection": {},
+          "settings": {}
+        },
+        {
+          "title": "Legs / track segments travelled",
+          "query": "MATCH (n:Station), (m:Station)\nWHERE n.name = $neodash_station_name_1 and m.name = $neodash_station_name_2\nWITH n,m\nCALL apoc.algo.dijkstra(n, m, 'TRACK_SEGMENT', 'travel_time_seconds') YIELD path, weight\nWITH weight, path\nUNWIND relationships(path) as rel\nRETURN COUNT(rel) + ' '\n\n\n\n",
+          "width": 3,
+          "height": 1,
+          "x": 0,
+          "y": 3,
+          "type": "value",
+          "selection": {},
+          "settings": {}
+        }
+      ]
+    },
+    {
+      "title": "Map views",
+      "reports": [
+        {
+          "title": "Choropleth - Stations per country",
+          "query": "MATCH (p:Station)\nRETURN p.country_code_3, COUNT(*)\n\n\n",
+          "width": 4,
+          "height": 4,
+          "x": 0,
+          "y": 0,
+          "type": "choropleth",
+          "selection": {
+            "index": "p.country_code_3",
+            "value": "COUNT(*)",
+            "key": "(none)"
+          },
+          "settings": {
+            "projectionScale": 500,
+            "projectionTranslationY": 1.2,
+            "projectionTranslationX": 0.3,
+            "legend": true,
+            "hideSelections": true
+          }
+        },
+        {
+          "title": "Heatmap of Stations",
+          "query": "MATCH (p:Station)\nRETURN p\n\n\n\n",
+          "width": 4,
+          "height": 4,
+          "x": 8,
+          "y": 0,
+          "type": "map",
+          "selection": {
+            "Station": "(no label)"
+          },
+          "settings": {
+            "layerType": "heatmap",
+            "hideSelections": true
+          }
+        },
+        {
+          "title": "Clusters - Stations in NL",
+          "query": "MATCH (po:Station)\nWHERE po.point.x > 3 and po.point.x < 6 AND po.point.y > 51 and po.point.y < 54\nRETURN po\n\n\n\n\n",
+          "width": 4,
+          "height": 4,
+          "x": 4,
+          "y": 0,
+          "type": "map",
+          "selection": {
+            "Station": "name"
+          },
+          "settings": {
+            "clusterMarkers": true,
+            "nodeColorScheme": "paired",
+            "styleRules": [
+              {
+                "field": "Station.name",
+                "condition": "!=",
+                "value": "undefined",
+                "customization": "marker color",
+                "customizationValue": "black"
+              }
+            ],
+            "hideSelections": true
+          }
+        },
+        {
+          "title": "",
+          "query": "MATCH (p:Station)\nRETURN p.country_code_3, COUNT(*)\n\n\n",
+          "width": 3,
+          "height": 2,
+          "x": 0,
+          "y": 4,
+          "type": "table",
+          "selection": {},
+          "settings": {}
+        }
+      ]
+    }
+  ],
+  "parameters": {},
+  "extensions": {
+    "advanced-charts": true,
+    "styling": true
+  }
+}

@@ -311,7 +311,7 @@ WITH row, split(row.`Geo Point`,",") as coords
 WITH row, point({latitude: toFloat(coords[0]), longitude: toFloat(coords[1])}) as point
 MATCH (n:Point)
 WHERE n.point = point
-SET n:Station
+SET n:Junction:Station
 SET n.since = row.beginLifes
 SET n.id = row.RStationID + "=" + id(n)
 SET n.uuid = row.inspireId
@@ -354,21 +354,23 @@ END
 
 WITH n, row, split(row.`Geo Point`,",") as coords
 SET n.point = point({latitude: toFloat(coords[0]), longitude: toFloat(coords[1])}) 
-
 SET n.name = row.NAMA1
 SET n.name_alt = row.NAMA1 + " / " + row.NAMA2
 SET n.all_names = row.NAMA1 + " / " + row.NAMA2  + " / " +  row.NAMN1  + " / " + row.NAMN2;
 
 
-
+// Identify junctions and set a unique label for it.
 MATCH (j:Point)-[t:TRACK_SEGMENT]-()
 WITH j, COUNT(t) as count
 WHERE count > 2 OR count = 1
 SET j:Junction;
 
-MATCH (j:Station)
-SET j:Station:Junction:Point;
+// Going in/out of a station gets a 2.5 minute penalty (assuming it might stop or slow down to pass)
+MATCH (j:Station)-[t:TRACK]-()
+WITH DISTINCT t
+SET t.travel_time_seconds = t.travel_time_seconds + 150;
 
+// Identify routes between junctions.
 CALL apoc.periodic.commit('
     MATCH (p:Junction) 
     WHERE p.routed IS NULL
@@ -387,8 +389,10 @@ CALL apoc.periodic.commit('
     RETURN COUNT(*)
 ', {limit:50});
 
+
+// Calculate total travel time for a route
 CALL apoc.periodic.commit("
-    MATCH (p:Junction)-[r:ROUTE]->(p2:Junction)
+    MATCH (p)-[r:ROUTE]->(p2)
     WHERE r.travel_time_seconds IS NULL
     WITH r, p, p2 LIMIT $limit
     CALL apoc.algo.dijkstra(p, p2, 'TRACK', 'travel_time_seconds') YIELD path, weight
@@ -396,3 +400,85 @@ CALL apoc.periodic.commit("
     SET r.distance = apoc.coll.sum([r in relationships(path) | r.distance])
     RETURN COUNT(*)
 ", {limit:500});
+
+// Fix country codes for junctions and track (approximation)
+WITH {
+  LAV: "LVA",
+  SPA: "ESP",
+  HRV: "HRV",
+  SRP: "SRB",
+  N_A: "N_A",
+  SLO: "SVK",
+  BUL: "BGR",
+  SLV: "SVN",
+  SWE: "SWE",
+  HUN: "HUN",
+  DUT: "NLD",
+  MKD: "MKD",
+  EST: "EST",
+  FIN: "FIN",
+  RUM: "ROU",
+  POL: "POL",
+  CZE: "CZE",
+  GEO: "GEO",
+  DAN: "DNK",
+  NOR: "NOR",
+  POR: "PRT",
+  GER: "DEU",
+  LIT: "LTU",
+  ITA: "ITA",
+  FRE: "FRA",
+  GRE: "GRC",
+  UKR: "UKR",
+  ENG: "GBR"
+} as country_code_mapping
+MATCH (n:Station)
+SET n.country_code_3 = country_code_mapping[n.country_code_3];
+
+WITH {
+  LAV: "LVA",
+  SPA: "ESP",
+  HRV: "HRV",
+  SRP: "SRB",
+  N_A: "N_A",
+  SLO: "SVK",
+  BUL: "BGR",
+  SLV: "SVN",
+  SWE: "SWE",
+  HUN: "HUN",
+  DUT: "NLD",
+  MKD: "MKD",
+  EST: "EST",
+  FIN: "FIN",
+  RUM: "ROU",
+  POL: "POL",
+  CZE: "CZE",
+  GEO: "GEO",
+  DAN: "DNK",
+  NOR: "NOR",
+  POR: "PRT",
+  GER: "DEU",
+  LIT: "LTU",
+  ITA: "ITA",
+  FRE: "FRA",
+  GRE: "GRC",
+  UKR: "UKR",
+  ENG: "GBR"
+} as country_code_mapping
+MATCH ()-[t:TRACK]->()
+SET t.country_code_3 = country_code_mapping[t.country_code_3];
+
+MATCH (s:Station)-[t:TRACK]-()
+WHERE s.country_code_3 <> "N_A"
+SET t.country_code_3 = s.country_code_3;
+
+MATCH (s:Station)-[:TRACK]-(j:Junction)
+WHERE s.country_code_3 <> "N_A"
+SET j.country_code_3 = s.country_code_3;
+
+// Clean up (aesthetic) -  Unique node labels for stations
+MATCH (s:Station)
+REMOVE s:Junction:Point;
+
+MATCH (j:Junction)
+REMOVE j:Point;
